@@ -4,3 +4,4 @@ dist
 *_PLAN.md
 test-*
 *.log
+*.db

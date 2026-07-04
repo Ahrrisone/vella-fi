@@ -10,11 +10,19 @@ import liquidityRoutes from "./routes/liquidityRoutes.js";
 import mvpBatchRoutes from "./routes/mvpBatchRoutes.js";
 import proofRoutes from "./routes/proofRoutes.js";
 import settlementRoutes from "./routes/settlementRoutes.js";
+import { validateRuntimeConfig } from "./config.js";
 import { initializeDatabase } from "./db/schema.js";
 
 // Initialize Express app
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+try {
+    validateRuntimeConfig();
+} catch (error) {
+    console.error("Fatal configuration error:", error instanceof Error ? error.message : String(error));
+    process.exit(1);
+}
 
 // Middleware
 app.use(bodyParser.json());

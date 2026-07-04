@@ -16,6 +16,10 @@ function defaultRouteConstraints(input?: Partial<RouteConstraints>): RouteConstr
     };
 }
 
+function isSolanaAddress(value: string): boolean {
+    return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value);
+}
+
 router.post("/intents", (req, res) => {
     const {
         ownerWallet,
@@ -41,8 +45,12 @@ router.post("/intents", (req, res) => {
         return res.status(400).json({ error: "side must be buy, sell, or swap" });
     }
 
-    if (Number(amountIn) <= 0) {
-        return res.status(400).json({ error: "amountIn must be positive" });
+    if (!isSolanaAddress(inputMint) || !isSolanaAddress(outputMint)) {
+        return res.status(400).json({ error: "inputMint and outputMint must be Solana mint addresses, not token symbols" });
+    }
+
+    if (!/^\d+$/.test(String(amountIn)) || BigInt(String(amountIn)) <= 0n) {
+        return res.status(400).json({ error: "amountIn must be a positive raw integer amount in atomic token units" });
     }
 
     const normalizedIntent = {

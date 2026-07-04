@@ -1,5 +1,5 @@
 {
-  "name": "valhalla-ledger-finance",
+  "name": "vella-finance",
   "version": "1.0.0",
   "description": "Vella Finance - Bulk trade analytics platform with Solana settlement",
   "main": "dist/index.js",

@@ -81,26 +81,33 @@ router.post("/execution-batches/:id/quote", (req, res) => {
         return res.status(400).json({ error: "Invalid batch ID" });
     }
 
-    getExecutionBatch(batchId, (batch) => {
+    getExecutionBatch(batchId, async (batch) => {
         if (!batch) return res.status(404).json({ error: "Batch not found" });
 
-        const routes = getLiquidityRoutes({
-            inputMint: batch.inputMint,
-            outputMint: batch.outputMint,
-            amountIn: batch.totalAmountIn,
-            maxSlippageBps: req.body?.maxSlippageBps
-        });
-        routes.forEach(route => insertLiquiditySnapshot(route));
+        try {
+            const routes = await getLiquidityRoutes({
+                inputMint: batch.inputMint,
+                outputMint: batch.outputMint,
+                amountIn: batch.totalAmountIn,
+                maxSlippageBps: req.body?.maxSlippageBps
+            });
+            routes.forEach(route => insertLiquiditySnapshot(route));
 
-        const selected = selectBestRoute(routes);
-        if (!selected) {
-            return res.status(422).json({ error: "No route satisfies batch constraints" });
+            const selected = selectBestRoute(routes);
+            if (!selected) {
+                return res.status(422).json({ error: "No live route satisfies batch constraints" });
+            }
+
+            const routeHash = createRouteHash(selected);
+            updateExecutionBatchAfterQuote(batchId, selected, routeHash, () => {
+                res.json({ batchId, selectedRoute: selected, routeHash, alternatives: routes });
+            });
+        } catch (error) {
+            res.status(502).json({
+                error: "Live batch quote failed",
+                details: error instanceof Error ? error.message : String(error)
+            });
         }
-
-        const routeHash = createRouteHash(selected);
-        updateExecutionBatchAfterQuote(batchId, selected, routeHash, () => {
-            res.json({ batchId, selectedRoute: selected, routeHash, alternatives: routes });
-        });
     });
 });
 
@@ -110,50 +117,58 @@ router.post("/execution-batches/:id/execute", (req, res) => {
         return res.status(400).json({ error: "Invalid batch ID" });
     }
 
-    getExecutionBatch(batchId, (batch) => {
+    getExecutionBatch(batchId, async (batch) => {
         if (!batch) return res.status(404).json({ error: "Batch not found" });
 
-        const routes = getLiquidityRoutes({
-            inputMint: batch.inputMint,
-            outputMint: batch.outputMint,
-            amountIn: batch.totalAmountIn,
-            maxSlippageBps: req.body?.maxSlippageBps
-        });
-        const selected = routes.find(route => route.poolOrRouteId === batch.selectedRouteId) ?? selectBestRoute(routes);
-        if (!selected) {
-            return res.status(422).json({ error: "No executable route available" });
-        }
+        try {
+            const routes = await getLiquidityRoutes({
+                inputMint: batch.inputMint,
+                outputMint: batch.outputMint,
+                amountIn: batch.totalAmountIn,
+                maxSlippageBps: req.body?.maxSlippageBps
+            });
+            const selected = routes.find(route => route.poolOrRouteId === batch.selectedRouteId) ?? selectBestRoute(routes);
+            if (!selected) {
+                return res.status(422).json({ error: "No executable live route available" });
+            }
 
-        const routeHash = createRouteHash(selected);
-        const quotedBatch = { ...batch, routeHash };
-        const result = simulateBatchExecution(quotedBatch, selected);
+            const routeHash = createRouteHash(selected);
+            const quotedBatch = { ...batch, routeHash };
+            const result = simulateBatchExecution(quotedBatch, selected);
 
-        getBatchIntents(batchId, (intents) => {
-            const allocations = allocateBatchFills(batchId, intents, selected.quotedAmountOut, result.actualAmountOut);
-            allocations.forEach(allocation => insertBatchAllocation(allocation));
-            settleExecutionBatch(
-                batchId,
-                result.actualAmountOut,
-                result.actualSlippageBps,
-                result.txSignature,
-                result.executionResultHash,
-                () => {
-                    updateExecutionBatchAfterQuote(batchId, selected, routeHash);
-                    res.json({
+            getBatchIntents(batchId, (intents) => {
+                const allocations = allocateBatchFills(batchId, intents, selected.quotedAmountOut, result.actualAmountOut);
+                allocations.forEach(allocation => insertBatchAllocation(allocation));
+                updateExecutionBatchAfterQuote(batchId, selected, routeHash, () => {
+                    settleExecutionBatch(
                         batchId,
-                        mode: "simulation",
-                        selectedRoute: selected,
-                        routeHash,
-                        ...result,
-                        allocations,
-                        privacy: {
-                            commitmentRoot: batch.commitmentRoot,
-                            note: "Execution is simulated for MVP safety; allocation records remain wallet-scoped."
+                        result.actualAmountOut,
+                        result.actualSlippageBps,
+                        result.txSignature,
+                        result.executionResultHash,
+                        () => {
+                            res.json({
+                                batchId,
+                                mode: "quote-backed-settlement-preview",
+                                selectedRoute: selected,
+                                routeHash,
+                                ...result,
+                                allocations,
+                                privacy: {
+                                    commitmentRoot: batch.commitmentRoot,
+                                    note: "Day 1/2 executes allocation against live quote data only; signed swap submission is a later milestone."
+                                }
+                            });
                         }
-                    });
-                }
-            );
-        });
+                    );
+                });
+            });
+        } catch (error) {
+            res.status(502).json({
+                error: "Live execution preview failed",
+                details: error instanceof Error ? error.message : String(error)
+            });
+        }
     });
 });
 

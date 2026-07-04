@@ -29,7 +29,7 @@ export function buildBatchPlans(intents: TradeIntent[]): BatchPlan[] {
 
     return Array.from(groups.values()).map(group => {
         const sorted = group.slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-        const totalAmount = sorted.reduce((sum, intent) => sum + Number(intent.amountIn), 0);
+        const totalAmount = sorted.reduce((sum, intent) => sum + BigInt(intent.amountIn), 0n);
         const commitments = sorted.map(intent => intent.intentCommitment ?? "");
 
         return {
@@ -37,7 +37,7 @@ export function buildBatchPlans(intents: TradeIntent[]): BatchPlan[] {
             batch: {
                 inputMint: sorted[0].inputMint,
                 outputMint: sorted[0].outputMint,
-                totalAmountIn: totalAmount.toFixed(6),
+                totalAmountIn: totalAmount.toString(),
                 intentCount: sorted.length,
                 aggregationWindowStartedAt: sorted[0].createdAt,
                 aggregationWindowClosedAt: new Date().toISOString(),

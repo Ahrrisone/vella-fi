@@ -6,22 +6,29 @@ import { getLiquiditySnapshots, insertLiquiditySnapshot } from "../db/schema.js"
 
 const router = Router();
 
-router.get("/liquidity/routes", (req, res) => {
-    const inputMint = String(req.query.inputMint ?? "SOL");
-    const outputMint = String(req.query.outputMint ?? "USDC");
-    const amountIn = String(req.query.amountIn ?? "100");
+router.get("/liquidity/routes", async (req, res) => {
+    const inputMint = String(req.query.inputMint ?? "So11111111111111111111111111111111111111112");
+    const outputMint = String(req.query.outputMint ?? "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+    const amountIn = String(req.query.amountIn ?? "100000000");
     const maxSlippageBps = req.query.maxSlippageBps ? Number(req.query.maxSlippageBps) : undefined;
 
-    const routes = getLiquidityRoutes({ inputMint, outputMint, amountIn, maxSlippageBps });
-    routes.forEach(route => insertLiquiditySnapshot(route));
+    try {
+        const routes = await getLiquidityRoutes({ inputMint, outputMint, amountIn, maxSlippageBps });
+        routes.forEach(route => insertLiquiditySnapshot(route));
 
-    res.json({
-        inputMint,
-        outputMint,
-        amountIn,
-        routes,
-        note: "Routes are deterministic MVP simulations shaped like Jupiter/Raydium quote data."
-    });
+        res.json({
+            inputMint,
+            outputMint,
+            amountIn,
+            routes,
+            providers: ["jupiter", "raydium"]
+        });
+    } catch (error) {
+        res.status(502).json({
+            error: "Live liquidity route lookup failed",
+            details: error instanceof Error ? error.message : String(error)
+        });
+    }
 });
 
 router.get("/liquidity/snapshots", (req, res) => {
